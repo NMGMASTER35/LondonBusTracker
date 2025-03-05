@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TfL Live Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        #map-container, #bus-map-container, #route-map-container {
+            width: 100%;
+            height: 400px;
+            border: 2px solid #ccc;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+        .list-group-item {
+            font-size: 1.1em;
+        }
+        .btn {
+            width: 100%;
+        }
+    </style>
+</head>
+<body class="container mt-4">
+    <h1 class="text-center text-danger">TfL Live Transport Dashboard</h1>
+
+    <div class="row">
+        <div class="col-md-6">
+            <h2>Live Transport Status</h2>
+            <ul id="status-list" class="list-group"></ul>
+        </div>
+        <div class="col-md-6">
+            <h2>National Rail & TfL Train Status</h2>
+            <ul id="train-status-list" class="list-group"></ul>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <h2>Real-Time Bus Tracking (By Reg)</h2>
+            <input type="text" id="bus-reg" class="form-control" placeholder="Enter Bus Registration">
+            <button class="btn btn-primary mt-2" onclick="trackBus()">Track Bus</button>
+            <div id="bus-map-container"></div>
+        </div>
+
+        <div class="col-md-6">
+            <h2>Track All Buses on a Route</h2>
+            <input type="text" id="bus-route" class="form-control" placeholder="Enter Bus Route (e.g., 25)">
+            <button class="btn btn-primary mt-2" onclick="trackRoute()">Track Route</button>
+            <div id="route-map-container"></div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <h2>Live Disruptions</h2>
+            <ul id="disruptions-list" class="list-group"></ul>
+        </div>
+        <div class="col-md-6">
+            <h2>Live Transport Map</h2>
+            <div id="map-container"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+	async function fetchData(url) {
+    const apiKey = "33be062d4b1d4427acf1870dcdf3091e"; // Replace with your actual API key
+    try {
+        let response = await fetch(`${url}?app_key=${apiKey}`);
+        return await response.json();
+    } catch (error) {
+        console.error("Error fetching data:", error);
+        alert("Failed to fetch data. Please try again.");
+        return [];
+    }
+}
+        async function fetchData(url) {
+            try {
+                let response = await fetch(url);
+                return await response.json();
+            } catch (error) {
+                console.error("Error fetching data:", error);
+                alert("Failed to fetch data. Please try again.");
+                return [];
+            }
+        }
+
+        async function trackBus() {
+            let busReg = document.getElementById("bus-reg").value.toUpperCase();
+            let data = await fetchData(`https://api.tfl.gov.uk/Vehicle/${busReg}/Arrivals`);
+
+            if (data.length === 0) {
+                alert("Bus not found or not currently running.");
+                return;
+            }
+
+            let map = L.map("bus-map-container").setView([data[0].latitude, data[0].longitude], 14);
+            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+            data.forEach(bus => {
+                L.marker([bus.latitude, bus.longitude])
+                    .addTo(map)
+                    .bindPopup(`Bus ${bus.lineName} - Next stop: ${bus.stationName}`);
+            });
+        }
+
+        async function trackRoute() {
+            let routeNumber = document.getElementById("bus-route").value;
+            let data = await fetchData(`https://api.tfl.gov.uk/line/${routeNumber}/arrivals`);
+
+            if (data.length === 0) {
+                alert("No active buses on this route.");
+                return;
+            }
+
+            let map = L.map("route-map-container").setView([data[0].latitude, data[0].longitude], 14);
+            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+            data.forEach(bus => {
+                L.marker([bus.latitude, bus.longitude])
+                    .addTo(map)
+                    .bindPopup(`Bus ${bus.vehicleId} - Next stop: ${bus.stationName}`);
+            });
+        }
+
+        async function getDisruptions() {
+            let data = await fetchData("https://api.tfl.gov.uk/line/mode/tube,overground,dlr,tram/status");
+            let disruptionsList = document.getElementById("disruptions-list");
+            disruptionsList.innerHTML = "";
+
+            data.forEach(line => {
+                if (line.lineStatuses[0].statusSeverity !== 10) {
+                    let li = document.createElement("li");
+                    li.className = "list-group-item list-group-item-danger";
+                    li.innerHTML = `<b>${line.name}:</b> ${line.lineStatuses[0].reason}`;
+                    disruptionsList.appendChild(li);
+                }
+            });
+        }
+
+        async function getTrainStatus() {
+            let data = await fetchData("https://api.tfl.gov.uk/line/mode/national-rail,elizabeth,tube/status");
+            let trainStatusList = document.getElementById("train-status-list");
+            trainStatusList.innerHTML = "";
+
+            data.forEach(train => {
+                let li = document.createElement("li");
+                li.className = "list-group-item list-group-item-info";
+                li.innerHTML = `<b>${train.name}:</b> ${train.lineStatuses[0].statusSeverityDescription}`;
+                trainStatusList.appendChild(li);
+            });
+        }
+
+        getDisruptions();
+        getTrainStatus();
+        setInterval(() => {
+            getDisruptions();
+            getTrainStatus();
+        }, 30000);
+    </script>
+</body>
+</html>
